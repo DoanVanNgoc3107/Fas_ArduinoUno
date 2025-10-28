@@ -17,12 +17,13 @@
 #define buzzerPin 9
 #define btnReset 8
 
-// DHT11 Config
-#define DHT11PIN 2
+// DHT Config
+#define DHT_PIN 2
+#define DHT_TYPE DHT22
 
 // Service - Alarm
 #define safety 35.0
-#define warning 37.0
+#define warning 38.0
 #define danger 42.0
 #define hys 0.5
 
@@ -44,16 +45,16 @@ void serialSetUp(int const baudRate) {
 
 /*
  * AlarmMode (contract):
- *  - ALARM_NONE: không có cảnh báo, buzzer tắt, LED tương ứng sẽ báo trạng thái an toàn
- *  - ALARM_WARNING: cảnh báo ở ngưỡng giữa (sẽ phát còi tần số và chu kỳ khác)
- *  - ALARM_DANGER: báo động (tần số cao hơn, nhịp nhanh)
+ * - ALARM_NONE: không có cảnh báo, buzzer tắt, LED tương ứng sẽ báo trạng thái an toàn
+ * - ALARM_WARNING: cảnh báo ở ngưỡng giữa (sẽ phát còi tần số và chu kỳ khác)
+ * - ALARM_DANGER: báo động (tần số cao hơn, nhịp nhanh)
  *
  * Biến liên quan:
- *  - alarmMode: lưu mode hiện tại
- *  - alarmLast: timestamp lần thay đổi trạng thái buzz (dùng millis())
- *  - alarmStateOn: trạng thái on/off hiện tại của còi trong chu kỳ
- *  - alarmOnMs/alarmOffMs: thời gian ON/OFF cho chu kỳ
- *  - alarmFreq: tần số (Hz) của tone khi bật
+ * - alarmMode: lưu mode hiện tại
+ * - alarmLast: timestamp lần thay đổi trạng thái buzz (dùng millis())
+ * - alarmStateOn: trạng thái on/off hiện tại của còi trong chu kỳ
+ * - alarmOnMs/alarmOffMs: thời gian ON/OFF cho chu kỳ
+ * - alarmFreq: tần số (Hz) của tone khi bật
  */
 
 enum AlarmMode {
@@ -105,9 +106,11 @@ void stopAlarm() {
     digitalWrite(buzzerPin, LOW);
 }
 
-// handleAlarm: state machine non-blocking cho buzzer
-// - Phải được gọi thường xuyên trong loop() để cập nhật trạng thái theo millis()
-// - Nếu AlarmMode == NONE thì hàm trả về, không làm gì
+/*
+ * handleAlarm: state machine non-blocking cho buzzer
+- Phải được gọi thường xuyên trong loop() để cập nhật trạng thái theo millis()
+- Nếu AlarmMode == NONE thì hàm trả về, không làm gì
+*/
 void handleAlarm() {
     if (alarmMode == ALARM_NONE) return;
     unsigned long now = millis();
@@ -136,19 +139,18 @@ void lcdSetUp() {
     lcd.setCursor(0, 0);
 
     lcd.print("Hello!");
-    // delay(2000);
-    // lcd.clear();
 
     lcd.setCursor(0, 1);
     lcd.print("Fire Alarm");
+
     delay(2000);
     lcd.clear();
 }
 
 /*
- * Cấu hình DHT11
+ * Cấu hình DHT
  */
-DHT dht11(DHT11PIN, DHT11);
+DHT dht(DHT_PIN, DHT_TYPE);
 
 // Kiểm tra xem dht có hoạt động hay không?
 void checkNAN(float const temp) {
@@ -167,27 +169,28 @@ void checkNAN(float const temp) {
  * Những hàm showXXX chỉ chịu trách nhiệm cập nhật LED + LCD (actuators)
  * Quy tắc tách trách nhiệm: quyết định trạng thái (service_business) -> gọi showXXX/startAlarm
 */
+
+void ledServices(bool const led_Green_State, const bool led_Red_State, const bool led_Yellow_State) {
+    digitalWrite(ledGreen, led_Green_State);
+    digitalWrite(ledRed, led_Red_State);
+    digitalWrite(ledYellow, led_Yellow_State);
+}
+
 void showSafety() {
-    stopAlarm(); // ensure buzzer off when safe
-    digitalWrite(ledGreen, HIGH);
-    digitalWrite(ledYellow, LOW);
-    digitalWrite(ledRed, LOW);
+    stopAlarm();
+    ledServices(HIGH, LOW, LOW);
     lcd.setCursor(0, 1);
     lcd.print("AN TOAN      ");
 }
 
 void showWarn() {
-    digitalWrite(ledGreen, LOW);
-    digitalWrite(ledYellow, HIGH);
-    digitalWrite(ledRed, LOW);
+    ledServices(LOW, LOW, HIGH);
     lcd.setCursor(0, 1);
     lcd.print("BAT THUONG   ");
 }
 
 void showDanger() {
-    digitalWrite(ledGreen, LOW);
-    digitalWrite(ledYellow, LOW);
-    digitalWrite(ledRed, HIGH);
+    ledServices(LOW, HIGH, LOW);
     lcd.setCursor(0, 1);
     lcd.print("BAO DONG     ");
 }
@@ -195,7 +198,7 @@ void showDanger() {
 void setup() {
     serialSetUp(9600);
 
-    dht11.begin();
+    dht.begin();
 
     lcdSetUp();
 
@@ -215,9 +218,7 @@ void setup() {
     pinMode(btnReset, INPUT_PULLUP);
 
     // Set initial LED states off
-    digitalWrite(ledGreen, LOW);
-    digitalWrite(ledYellow, LOW);
-    digitalWrite(ledRed, LOW);
+    ledServices(LOW, LOW, LOW);
 
     // Buzzer setup
     buzzerSetUp();
@@ -226,30 +227,32 @@ void setup() {
 
 /*
  * service_business (contract):
- *  - Inputs:
- *      temp: giá trị nhiệt độ hiện tại (đọc từ DHT11)
- *      tempCurrent: (hiện đang trùng với temp) dự phòng cho logic nâng cao
- *      resetPressed: true nếu nút Reset đang được nhấn
- *  - Behavior:
- *      - Nếu resetPressed: tắt còi và bật tắt LED để người dùng kiểm tra phần cứng
- *      - Nếu nhiệt thay đổi đủ lớn (temp_tb) hoặc khác mẫu trước: quyết định trạng thái
- *  - Side effects: cập nhật LED, LCD, và gọi start/stop alarm.
+ * - Inputs:
+ * temp: giá trị nhiệt độ hiện tại (đọc từ DHT)
+ * tempCurrent: (hiện đang trùng với temp) dự phòng cho logic nâng cao
+ * resetPressed: true nếu nút Reset đang được nhấn
+ * - Behavior:
+ * - Nếu resetPressed: tắt còi và bật tắt LED để người dùng kiểm tra phần cứng
+ * - Nếu nhiệt thay đổi đủ lớn (temp_tb) hoặc khác mẫu trước: quyết định trạng thái
+ * - Side effects: cập nhật LED, LCD, và gọi start/stop alarm.
  *
  * Lưu ý về debounce: hiện dùng delay(500) nhỏ khi reset được nhấn để giảm bouncing.
- * Độ chính xác đọc DHT11: DHT11 có độ phân giải ~1°C và chậm; DHT22 sẽ cho kết quả tốt hơn.
+ * Độ chính xác đọc DHT22: DHT22 có độ phân giải cao hơn DHT11.
  */
-void service_business(float temp, float tempCurrent, bool resetPressed) {
+void service_business(const float temp, const float tempCurrent, const bool resetPressed, const bool activePressed) {
     if (resetPressed) {
-        // Turn on all three LEDs while reset is pressed
-        digitalWrite(ledRed, HIGH);
-        digitalWrite(ledYellow, HIGH);
-        digitalWrite(ledGreen, HIGH);
+        ledServices(HIGH, HIGH, HIGH);
 
-        stopAlarm(); // silence buzzer while reset pressed
+        stopAlarm();
 
-        // small debounce/delay
         delay(50);
-        return; // go to next loop iteration
+        return;
+    }
+
+    if (activePressed) {
+        ledServices(LOW, HIGH, LOW);
+        startAlarm(ALARM_DANGER);
+        showDanger();
     }
 
     // Cập nhật chỉ khi nhiệt độ thay đổi đủ lớn so với mẫu trước để giảm flicker LCD
@@ -259,7 +262,7 @@ void service_business(float temp, float tempCurrent, bool resetPressed) {
             stopAlarm();
             tempLast = tempCurrent;
         } else if (temp > safety && temp <= warning) {
-            startAlarm(ALARM_WARNING); // start before handle for immediate effect
+            startAlarm(ALARM_WARNING);
             handleAlarm();
             showWarn();
             tempLast = tempCurrent;
@@ -273,9 +276,9 @@ void service_business(float temp, float tempCurrent, bool resetPressed) {
         Serial.println(temp, 2);
 
         lcd.setCursor(0, 0);
-        lcd.print("Nhiet do: ");
+        lcd.print("T: ");
         lcd.print(temp, 1); // one decimal
-        lcd.print(static_cast<char>(223)); // degree symbol (may vary)
+        lcd.print(static_cast<char>(223));
         lcd.print("C   ");
     }
 }
@@ -283,30 +286,37 @@ void service_business(float temp, float tempCurrent, bool resetPressed) {
 
 /*
  * Main loop (quy tắc):
- *  - Đọc cảm biến (DHT11)
- *  - Kiểm tra lỗi đọc
- *  - Dùng millis() để giới hạn tần số đọc (1 giây)
- *  - Đọc trạng thái nút Reset (INPUT_PULLUP => pressed == LOW)
- *  - Gọi service_business để xử lý quyết định
- *  - Gọi handleAlarm để cập nhật bật/tắt buzzer (non-blocking)
+ * - Đọc cảm biến (DHT)
+ * - Kiểm tra lỗi đọc
+ * - Dùng millis() để giới hạn tần số đọc (1 giây)
+ * - Đọc trạng thái nút Reset (INPUT_PULLUP => pressed == LOW)
+ * - Gọi service_business để xử lý quyết định
+ * - Gọi handleAlarm để cập nhật bật/tắt buzzer (non-blocking)
  */
 void loop() {
     unsigned long now = millis();
-    float const temp = dht11.readTemperature();
+
+    // THAY ĐỔI: Đọc nhiệt độ từ đối tượng 'dht' (thay vì dht11)
+    float const temp = dht.readTemperature() - 2.0;
     float const tempCurrent = temp;
 
     // Check if read failed
     checkNAN(temp);
 
-    if (now - lastTime < 1000) {
-        return; // đọc mỗi 1 giây
+    // THAY ĐỔI: DHT22 cần thời gian đọc lâu hơn, nên tăng thời gian chờ
+    // giữa các lần đọc lên 2000ms (2 giây) là an toàn nhất.
+    if (now - lastTime < 2000) {
+        // Nếu bạn vẫn muốn 1 giây (1000ms) như mã gốc, nó có thể vẫn hoạt động
+        // nhưng 2 giây được khuyến nghị cho DHT22.
+        return; // đọc mỗi 2 giây
     }
     lastTime = now;
 
     // Reset button uses INPUT_PULLUP: pressed == LOW
     const bool resetPressed = (digitalRead(btnReset) == LOW);
+    const bool activePressed = (digitalRead(btnActive) == LOW);
 
-    service_business(temp, tempCurrent, resetPressed);
+    service_business(temp, tempCurrent, resetPressed, activePressed);
 
     // continue alarm state machine each loop
     handleAlarm();
