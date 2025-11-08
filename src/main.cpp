@@ -561,13 +561,7 @@ void loop()
             float const tempCurrent = dht.readTemperature() + TEMP_OFFSET;
 
             // 2. Kiểm tra lỗi (non-blocking)
-            if (checkNAN_nonBlocking(tempCurrent))
-            {
-                // Nếu CÓ lỗi:
-                // Không làm gì cả, màn hình lỗi sẽ được giữ nguyên.
-                // Chờ 2 giây sau đọc lại.
-            }
-            else
+            if (!checkNAN_nonBlocking(tempCurrent))
             {
                 // 3. KHÔNG có lỗi DHT:
                 // Tiếp tục đọc MQ2 và chạy nghiệp vụ
