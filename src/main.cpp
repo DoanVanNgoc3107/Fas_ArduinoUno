@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
+#include <math.h>
 
 /*
  * Ở đây là định nghĩa các chân của linh kiện
@@ -17,16 +18,18 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define ledYellow 12
 
 // ==== Button Config
-#define btnActive 7
+#define btnActive 2
 #define buzzerPin 9
 #define btnReset 8
+#define DEBOUNCE_MS 50 // 50 milliseconds
 
 // ==== DHT Config
-#define DHT_PIN 2
+#define DHT_PIN 4
 #define DHT_TYPE DHT22
 
 DHT dht(DHT_PIN, DHT_TYPE);
 
+#define TEMP_OFFSET -2.0
 // ==== Service - TEMP
 #define safety 35.0
 #define warning 38.0
@@ -48,11 +51,51 @@ constexpr int MQ2_tb = 10;
 #define temp_tb 0.2      // Nhiet do nguong
 #define bonusCorrect 1.0 // Tang do chinh xac cho cam bien nhiet
 
-unsigned long lastTime = 0;
-
 float tempLast = 0.0;
 
 int valueMQ2Last = 0;
+
+// Cờ để nhận biết nút ngắt ngoài
+volatile bool activeButtonPressedFlag = false;
+// Biến lưu thời gian cuối cùng nhấn nút (để chống dội)
+unsigned long lastActiveButtonPress = 0;
+
+unsigned long lastTime = 0;
+
+// Debounce state for reset button (polling)
+int btnReset_lastReading = HIGH;
+int btnReset_stableState = HIGH;
+unsigned long btnReset_lastDebounce = 0;
+
+/**
+ * @brief Kiểm tra xem đã đủ thời gian trễ hay chưa (non-blocking).
+ * @param lastTime Biến lưu mốc thời gian trước đó (truyền bằng tham chiếu).
+ * @param timeDelay Khoảng thời gian trễ mong muốn (ms).
+ * @return true nếu đã đủ thời gian, false nếu chưa.
+ */
+bool checkTimer(unsigned long &lastTime, const unsigned long timeDelay)
+{
+    // Get current time
+    unsigned long now = millis();
+
+    // If this is the first call (lastTime == 0), initialize and don't trigger yet.
+    if (lastTime == 0)
+    {
+        lastTime = now;
+        return false;
+    }
+
+    // Compare with the last time (overflow-safe)
+    if (now - lastTime >= timeDelay)
+    {
+        // if enough time has passed, update lastTime
+        lastTime = now;
+        return true;
+    }
+
+    // If not enough time has passed
+    return false;
+}
 
 /*
  * Serial set up
@@ -170,15 +213,15 @@ void handleAlarm(const unsigned long now)
 }
 
 // ===== Logic business MQ2 ===
-
 /*
  * Hàm này sử đụng dể hiệu chuẩn cho MQ2
- * @param : now - thời gian hiện tại
- *          time
+ * @param : start - thời gian hiện tại
+ *          time_calibrate - thời gian hiệu chuẩn (ms)
+ * @return : bool
  */
 bool MQ2Setup(const unsigned long start, unsigned long const time_calibrate)
 {
-    if (start > time_calibrate)
+    if (millis() - start > time_calibrate)
         return true;
     return false;
 }
@@ -258,45 +301,58 @@ void showDanger()
     lcd.print("BAO DONG     ");
 }
 
-/*
- * service_business (contract):
- * - Inputs:
- * temp: giá trị nhiệt độ hiện tại (đọc từ DHT22)
- * tempCurrent: (hiện đang trùng với temp) dự phòng cho logic nâng cao
- * resetPressed: true nếu nút Reset đang được nhấn
- * - Behavior:
- * - Nếu resetPressed: tắt còi và bật tắt LED để người dùng kiểm tra phần cứng
- * - Nếu nhiệt thay đổi đủ lớn (temp_tb) hoặc khác mẫu trước: quyết định trạng thái
- * - Side effects: cập nhật LED, LCD, và gọi start/stop alarm.
- *
- * Lưu ý về debounce: hiện dùng delay(500) nhỏ khi reset được nhấn để giảm bouncing.
- * Độ chính xác đọc DHT22: DHT22 có độ phân giải cao hơn DHT11.
- */
-void service_business(const float tempCurrent, const int valueMQ2, const bool resetPressed, const bool activePressed)
+// Update debounce state for a polled button. Call frequently from loop().
+void updateButtonDebounce(const int pin, int &lastReading, int &stableState, unsigned long &lastDebounceTime, const unsigned long debounceMs)
 {
+    int reading = digitalRead(pin);
+    unsigned long now = millis();
+
+    if (reading != lastReading)
+    {
+        // reset debounce timer on any change
+        lastDebounceTime = now;
+    }
+
+    if ((now - lastDebounceTime) >= debounceMs)
+    {
+        // if the reading has been stable for the debounce period, take it as the actual state
+        if (reading != stableState)
+        {
+            stableState = reading;
+        }
+    }
+
+    lastReading = reading;
+}
+
+/*
+    * Hàm xử lý nghiệp vụ chính
+    * @param : tempCurrent - nhiệt độ hiện tại
+    *          valueMQ2 - giá trị đọc từ MQ2
+    *          resetPressed - trạng thái nút reset
+    *          activePressed - trạng thái nút active
+    * @return : void
+    * Logic:
+    * 1. Nếu nút reset được nhấn, dừng báo động và hiển thị trạng thái an toàn
+    * 2. Nếu nút active được nhấn, kích hoạt báo động nguy hiểm và hiển thị trạng thái nguy hiểm
+    * 3. Cập nhật trạng thái hiển thị và báo động dựa trên nhiệt độ và giá trị MQ2 với ngưỡng đã định nghĩa
+    * 4. Chỉ cập nhật hiển thị nếu có sự thay đổi đáng kể để giảm nhấp nháy của LCD
+    * 5. Cập nhật biến tempLast và valueMQ2Last sau mỗi lần kiểm tra
+    * 6. Cập nhật lastTime mỗi khi có sự kiện nhấn nút
+
+ */
+void service_business(const float tempCurrent, const int valueMQ2, const bool resetPressed)
+{
+
     if (resetPressed)
     {
         ledServices(HIGH, HIGH, HIGH);
-
         stopAlarm();
-
-        delay(50);
-
         return;
     }
 
-    if (activePressed)
-    {
-        ledServices(LOW, HIGH, LOW);
-
-        startAlarm(ALARM_DANGER);
-
-        showDanger();
-    }
-
-    // Cập nhật chỉ khi nhiệt độ thay đổi đủ lớn so với mẫu trước để giảm flicker LCD
-    if (tempCurrent != tempLast || tempCurrent - tempLast >= temp_tb ||
-        valueMQ2 != valueMQ2Last || valueMQ2 - valueMQ2Last >= MQ2_tb)
+    // Update only if significant change to reduce LCD flicker
+    if (fabs(tempCurrent - tempLast) >= temp_tb || abs(valueMQ2 - valueMQ2Last) >= MQ2_tb)
     {
         // SAFETY
         if (tempCurrent <= safety && valueMQ2 <= MQ2_THRESHOLD_NORMAL)
@@ -326,11 +382,63 @@ void service_business(const float tempCurrent, const int valueMQ2, const bool re
         Serial.print("Temp C=");
         Serial.println(tempCurrent, 2);
 
+        // Build strings for MQ2 (left) and temperature (right) and print without overlap
+        String mq2Str = String("MQ2:") + String(valueMQ2);
+        String tempStr = String("T:") + String(tempCurrent, 1) + String((char)223) + String("C");
+
+        int tempStart = 16 - tempStr.length();
+        if (tempStart < 0)
+            tempStart = 0;
+        // Ensure at least one column between MQ2 and temp; if collision, adjust tempStart
+        if (tempStart <= (int)mq2Str.length())
+        {
+            tempStart = mq2Str.length() + 1;
+            if (tempStart > 15)
+                tempStart = 15 - tempStr.length() + 1; // fallback
+            if (tempStart < 0)
+                tempStart = 0;
+        }
+
         lcd.setCursor(0, 0);
-        lcd.print("T: ");
-        lcd.print(tempCurrent, 1); // one decimal
-        lcd.print(static_cast<char>(223));
-        lcd.print("C   ");
+        lcd.print(mq2Str);
+        // pad spaces up to tempStart
+        int pad = tempStart - mq2Str.length();
+        for (int i = 0; i < pad; ++i)
+            lcd.print(' ');
+
+        lcd.setCursor(tempStart, 0);
+        lcd.print(tempStr);
+    }
+}
+
+// Hàm ngắt ngoài xử lý báo cháy khẩn cấp khi bấm nút chủ động.
+void ISR_ACTIVE_BUTTON()
+{
+    // Giương cờ cho loop() biết nút đã được nhấn
+    activeButtonPressedFlag = true;
+}
+
+void handleActiveButtonLogic(volatile bool &dangerFlag)
+{
+    if (activeButtonPressedFlag == true)
+    {
+        // 1.1. Hạ cờ xuống ngay lập tức
+        activeButtonPressedFlag = false;
+
+        // 1.2. Chống dội (Debounce)
+        // Chỉ xử lý nếu đã qua 50ms kể từ lần nhấn hợp lệ cuối
+        if (millis() - lastActiveButtonPress >= DEBOUNCE_MS)
+        {
+            lastActiveButtonPress = millis(); // Cập nhật mốc thời gian
+
+            // 1.3. Thực thi logic báo động khẩn cấp
+            // (Đây là code bạn đã cố viết trong ISR cũ)
+            Serial.println("!!! KICH HOAT BAO DONG KHAN CAP !!!");
+            ledServices(LOW, HIGH, LOW);
+            startAlarm(ALARM_DANGER);
+            showDanger();
+        }
+        // Nếu chưa đủ 50ms, đây là tín hiệu "dội" (bounce), ta bỏ qua
     }
 }
 
@@ -342,23 +450,27 @@ void setup()
 
     lcdSetUp();
 
-    // Led - Green - An toan
+    MQ2Setup(millis(), MQ2_CALIBRATION_TIME);
+
+    // GREEN - RED - YELLOW
     pinMode(ledGreen, OUTPUT);
-
-    // Led - Red - Danger
     pinMode(ledRed, OUTPUT);
-
-    // Led - Yellow - Warning
     pinMode(ledYellow, OUTPUT);
 
-    // Btn - Button Active (khai báo sẵn để mở rộng - hiện chưa dùng trong logic)
-    pinMode(btnActive, INPUT_PULLUP);
+    // Btn - Button Active
+    pinMode(btnActive, INPUT_PULLUP); // Chân 2
 
     // Reset - Button Reset (use internal pull-up, expect button to ground when pressed)
     pinMode(btnReset, INPUT_PULLUP);
 
     // Set initial LED states off
     ledServices(LOW, LOW, LOW);
+
+    // Hàm ngắt ngoài này đang chạy ở chế độ FALLING nghĩa là : khi chân btnActive (Pin 2) có tín hiệu từ HIGH xuống LOW
+    attachInterrupt(digitalPinToInterrupt(btnActive), ISR_ACTIVE_BUTTON, FALLING);
+
+    // Reset - Button Reset
+    pinMode(btnReset, INPUT_PULLUP); // Chân 8
 
     // Buzzer setup
     buzzerSetUp();
@@ -369,28 +481,32 @@ void loop()
 {
     const unsigned long now = millis();
 
-    // continue alarm state machine each loop
+    // ==============================================
+    // === 1. XỬ LÝ LOGIC NGẮT (ƯU TIÊN CAO NHẤT) ===
+    // ==============================================
+    handleActiveButtonLogic(activeButtonPressedFlag);
+
+    // ==============================================
+    // === 2. CÁC TÁC VỤ BÌNH THƯỜNG KHÁC ===
+    // ==============================================
+    // Xử lý còi báo động (non-blocking)
     handleAlarm(now);
 
-    float const tempCurrent = dht.readTemperature() - 2.0;
+    // Đọc cảm biến
+    float const tempCurrent = dht.readTemperature() + TEMP_OFFSET;
     int const valueMQ2Current = getValueMQ2(MQ2_PIN);
 
-    const bool resetPressed = (digitalRead(btnReset) == LOW);
-    const bool activePressed = (digitalRead(btnActive) == LOW);
+    // Update debounce state for reset button (polled)
+    updateButtonDebounce(btnReset, btnReset_lastReading, btnReset_stableState, btnReset_lastDebounce, DEBOUNCE_MS);
+    const bool resetPressed = (btnReset_stableState == LOW);
 
     // Check if read failed
     if (checkNAN(tempCurrent))
         return;
 
-    /*
-     * Khi ma thoi gian nho hon 2s thi se thoat khoi if
-     * Su dung if trong khoang thoi gian 2s
-     */
-    if (now - lastTime < 2000)
+    // Chỉ chạy service_business mỗi 2000 ms
+    if (checkTimer(lastTime, 2000))
     {
-        return; // đọc mỗi 2 giây
+        service_business(tempCurrent, valueMQ2Current, resetPressed);
     }
-
-    service_business(tempCurrent, valueMQ2Current, resetPressed, activePressed);
-    lastTime = now;
 }
