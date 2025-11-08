@@ -1,0 +1,64 @@
+//
+// !!! WARNING !!! AUTO-GENERATED FILE!
+// PLEASE DO NOT MODIFY IT AND USE "platformio.ini":
+// https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags
+//
+{
+    "configurations": [
+        {
+            "name": "PlatformIO",
+            "includePath": [
+                "D:/Project_1/FAS/resource/Fas_ArduinoUno/include",
+                "D:/Project_1/FAS/resource/Fas_ArduinoUno/src",
+                "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/LiquidCrystal_I2C",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/DHT sensor library",
+                "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/Adafruit Unified Sensor@src-b66dc39c11b28c567c715313bb4d4d54",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/cores/arduino",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/variants/standard",
+                "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/Adafruit Unified Sensor",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                ""
+            ],
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "D:/Project_1/FAS/resource/Fas_ArduinoUno/include",
+                    "D:/Project_1/FAS/resource/Fas_ArduinoUno/src",
+                    "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/LiquidCrystal_I2C",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                    "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/DHT sensor library",
+                    "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/Adafruit Unified Sensor@src-b66dc39c11b28c567c715313bb4d4d54",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/cores/arduino",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/variants/standard",
+                    "D:/Project_1/FAS/resource/Fas_ArduinoUno/.pio/libdeps/uno/Adafruit Unified Sensor",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                    "C:/Users/doanv/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                    ""
+                ]
+            },
+            "defines": [
+                "PLATFORMIO=60118",
+                "ARDUINO_AVR_UNO",
+                "F_CPU=16000000L",
+                "ARDUINO_ARCH_AVR",
+                "ARDUINO=10808",
+                "__AVR_ATmega328P__",
+                ""
+            ],
+            "cStandard": "gnu11",
+            "cppStandard": "gnu++11",
+            "compilerPath": "C:/Users/doanv/.platformio/packages/toolchain-atmelavr/bin/avr-gcc.exe",
+            "compilerArgs": [
+                "-mmcu=atmega328p",
+                ""
+            ]
+        }
+    ],
+    "version": 4
+}

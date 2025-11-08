@@ -35,19 +35,18 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 // ==== MQ2 Config
 #define MQ2_PIN A0
-#define MQ2_THRESHOLD_NORMAL 300   // ngưỡng bình thường
-#define MQ2_THRESHOLD_WARNING 500  // ngưỡng cảnh báo
-#define MQ2_THRESHOLD_DANGER 700   // ngưỡng nguy hiểm
+#define MQ2_THRESHOLD_NORMAL 300  // ngưỡng bình thường
+#define MQ2_THRESHOLD_WARNING 500 // ngưỡng cảnh báo
+#define MQ2_THRESHOLD_DANGER 700  // ngưỡng nguy hiểm
 constexpr int MQ2_tb = 10;
 
 // ==== Service - MQ2 Logic
-#define MQ2_SAMPLE_TIME 1000      // đọc mỗi 1 giây
+#define MQ2_SAMPLE_TIME 1000       // đọc mỗi 1 giây
 #define MQ2_CALIBRATION_TIME 20000 // hiệu chuẩn 20 giây đầu
 
 // ==== Services Logic
-#define temp_tb 0.2 // Nhiet do nguong
+#define temp_tb 0.2      // Nhiet do nguong
 #define bonusCorrect 1.0 // Tang do chinh xac cho cam bien nhiet
-
 
 unsigned long lastTime = 0;
 
@@ -62,7 +61,8 @@ int valueMQ2Last = 0;
  * Baud rate (tốc độ baud) là tốc độ truyền dữ liệu nối tiếp (serial)
  * — tức là số lượng bit được truyền trong 1 giây qua cổng UART (Universal Asynchronous Receiver/Transmitter).
  */
-void serialSetUp(int const baudRate) {
+void serialSetUp(int const baudRate)
+{
     Serial.begin(baudRate);
     Serial.println("Serial set up finish");
 }
@@ -80,7 +80,8 @@ void serialSetUp(int const baudRate) {
  * - alarmOnMs/alarmOffMs: thời gian ON/OFF cho chu kỳ
  * - alarmFreq: tần số (Hz) của tone khi bật
  */
-enum AlarmMode {
+enum AlarmMode
+{
     ALARM_NONE = 0,
     ALARM_SAFETY = 1,
     ALARM_WARNING = 2,
@@ -102,7 +103,8 @@ int alarmFreq = 1000;
 
 // Setup Buzzer
 // "buzzerSetUp" chỉ đặt pinMode và trạng thái ban đầu, KHÔNG phát âm.
-void buzzerSetUp() {
+void buzzerSetUp()
+{
     pinMode(buzzerPin, OUTPUT);
     digitalWrite(buzzerPin, LOW);
 }
@@ -112,15 +114,19 @@ void buzzerSetUp() {
 - Chỉ thay đổi trạng thái và tham số; không làm blocking hoặc delay
 - Gọi handleAlarm() trong loop để thực hiện ON/OFF dựa trên millis()
 */
-void startAlarm(AlarmMode const mode) {
+void startAlarm(AlarmMode const mode)
+{
     alarmMode = mode;
     alarmLast = millis();
     alarmStateOn = false;
-    if (mode == ALARM_WARNING) {
+    if (mode == ALARM_WARNING)
+    {
         alarmFreq = 1000; // 1 kHz
         alarmOnMs = 400;
         alarmOffMs = 600;
-    } else if (mode == ALARM_DANGER) {
+    }
+    else if (mode == ALARM_DANGER)
+    {
         alarmFreq = 2000; // 2 kHz
         alarmOnMs = 150;
         alarmOffMs = 150;
@@ -128,7 +134,8 @@ void startAlarm(AlarmMode const mode) {
 }
 
 // stopAlarm: tắt còi ngay lập tức và reset trạng thái alarm
-void stopAlarm() {
+void stopAlarm()
+{
     noTone(buzzerPin);
     alarmMode = ALARM_NONE;
     alarmStateOn = false;
@@ -140,33 +147,54 @@ void stopAlarm() {
 - Phải được gọi thường xuyên trong loop() để cập nhật trạng thái theo millis()
 - Nếu AlarmMode == NONE thì hàm trả về, không làm gì
 */
-void handleAlarm(const unsigned long now) {
-    if (alarmMode == ALARM_NONE) return;
+void handleAlarm(const unsigned long now)
+{
+    if (alarmMode == ALARM_NONE)
+        return;
 
     const unsigned long interval = alarmStateOn ? alarmOnMs : alarmOffMs;
 
-    if (now - alarmLast >= interval) {
+    if (now - alarmLast >= interval)
+    {
         alarmLast = now;
         alarmStateOn = !alarmStateOn;
-        if (alarmStateOn) {
+        if (alarmStateOn)
+        {
             tone(buzzerPin, alarmFreq);
-        } else {
+        }
+        else
+        {
             noTone(buzzerPin);
         }
     }
 }
 
 // ===== Logic business MQ2 ===
+
+/*
+ * Hàm này sử đụng dể hiệu chuẩn cho MQ2
+ * @param : now - thời gian hiện tại
+ *          time
+ */
+bool MQ2Setup(const unsigned long start, unsigned long const time_calibrate)
+{
+    if (start > time_calibrate)
+        return true;
+    return false;
+}
+
 /*
  * Hàm này trả về giá trị khi đọc của MQ2
- *
+ * @param : MQ2 pin
  */
-int getValueMQ2(int const MQ2) {
-    return analogRead(MQ2);
+int getValueMQ2(int const MQ2_pin)
+{
+    return analogRead(MQ2_pin);
 }
 
 // ==== LCD
-void lcdSetUp() {
+void lcdSetUp()
+{
     lcd.init();
     lcd.backlight();
     lcd.setCursor(0, 0);
@@ -181,8 +209,10 @@ void lcdSetUp() {
 }
 
 // Kiểm tra xem dht22 có hoạt động hay không?
-bool checkNAN(float const temp) {
-    if (isnan(temp)) {
+bool checkNAN(float const temp)
+{
+    if (isnan(temp))
+    {
         Serial.println("Failed to read from DHT sensor!");
         lcd.clear();
         lcd.setCursor(0, 0);
@@ -197,28 +227,32 @@ bool checkNAN(float const temp) {
  * Services Alarm Logic
  * Những hàm showXXX chỉ chịu trách nhiệm cập nhật LED + LCD (actuators)
  * Quy tắc tách trách nhiệm: quyết định trạng thái (service_business) -> gọi showXXX/startAlarm
-*/
-void ledServices(bool const led_Green_State, const bool led_Red_State, const bool led_Yellow_State) {
+ */
+void ledServices(bool const led_Green_State, const bool led_Red_State, const bool led_Yellow_State)
+{
     digitalWrite(ledGreen, led_Green_State);
     digitalWrite(ledRed, led_Red_State);
     digitalWrite(ledYellow, led_Yellow_State);
 }
 
 // ================================Logic Business===================================
-void showSafety() {
+void showSafety()
+{
     stopAlarm();
     ledServices(HIGH, LOW, LOW);
     lcd.setCursor(0, 1);
     lcd.print("AN TOAN      ");
 }
 
-void showWarn() {
+void showWarn()
+{
     ledServices(LOW, LOW, HIGH);
     lcd.setCursor(0, 1);
     lcd.print("BAT THUONG   ");
 }
 
-void showDanger() {
+void showDanger()
+{
     ledServices(LOW, HIGH, LOW);
     lcd.setCursor(0, 1);
     lcd.print("BAO DONG     ");
@@ -238,8 +272,10 @@ void showDanger() {
  * Lưu ý về debounce: hiện dùng delay(500) nhỏ khi reset được nhấn để giảm bouncing.
  * Độ chính xác đọc DHT22: DHT22 có độ phân giải cao hơn DHT11.
  */
-void service_business(const float tempCurrent, const int valueMQ2, const bool resetPressed, const bool activePressed) {
-    if (resetPressed) {
+void service_business(const float tempCurrent, const int valueMQ2, const bool resetPressed, const bool activePressed)
+{
+    if (resetPressed)
+    {
         ledServices(HIGH, HIGH, HIGH);
 
         stopAlarm();
@@ -249,7 +285,8 @@ void service_business(const float tempCurrent, const int valueMQ2, const bool re
         return;
     }
 
-    if (activePressed) {
+    if (activePressed)
+    {
         ledServices(LOW, HIGH, LOW);
 
         startAlarm(ALARM_DANGER);
@@ -259,22 +296,26 @@ void service_business(const float tempCurrent, const int valueMQ2, const bool re
 
     // Cập nhật chỉ khi nhiệt độ thay đổi đủ lớn so với mẫu trước để giảm flicker LCD
     if (tempCurrent != tempLast || tempCurrent - tempLast >= temp_tb ||
-        valueMQ2 != valueMQ2Last || valueMQ2 - valueMQ2Last >= temp_tb) {
+        valueMQ2 != valueMQ2Last || valueMQ2 - valueMQ2Last >= MQ2_tb)
+    {
         // SAFETY
-        if (tempCurrent <= safety && valueMQ2 <= MQ2_THRESHOLD_NORMAL) {
+        if (tempCurrent <= safety && valueMQ2 <= MQ2_THRESHOLD_NORMAL)
+        {
             showSafety();
             stopAlarm();
             tempLast = tempCurrent;
             valueMQ2Last = valueMQ2;
-        } else if ((tempCurrent > safety && tempCurrent <= warning)
-                   || (valueMQ2 >= MQ2_THRESHOLD_WARNING && valueMQ2 <= MQ2_THRESHOLD_DANGER)) {
+        }
+        else if ((tempCurrent > safety && tempCurrent <= warning) || (valueMQ2 >= MQ2_THRESHOLD_WARNING && valueMQ2 <= MQ2_THRESHOLD_DANGER))
+        {
             startAlarm(ALARM_WARNING);
             // handleAlarm(now);
             showWarn();
             tempLast = tempCurrent;
             valueMQ2Last = valueMQ2;
-        } else if (tempCurrent > warning || tempCurrent >= danger
-                   || valueMQ2 >= MQ2_THRESHOLD_DANGER) {
+        }
+        else if (tempCurrent > warning || tempCurrent >= danger || valueMQ2 >= MQ2_THRESHOLD_DANGER)
+        {
             startAlarm(ALARM_DANGER);
             // handleAlarm(now);
             showDanger();
@@ -293,7 +334,8 @@ void service_business(const float tempCurrent, const int valueMQ2, const bool re
     }
 }
 
-void setup() {
+void setup()
+{
     serialSetUp(9600);
 
     dht.begin();
@@ -323,8 +365,8 @@ void setup() {
     stopAlarm();
 }
 
-void loop() {
-
+void loop()
+{
     const unsigned long now = millis();
 
     // continue alarm state machine each loop
@@ -333,20 +375,22 @@ void loop() {
     float const tempCurrent = dht.readTemperature() - 2.0;
     int const valueMQ2Current = getValueMQ2(MQ2_PIN);
 
-    // Check if read failed
-    if (checkNAN(tempCurrent)) return;
-
-    // Khi ma thoi gian nho hon 2s thi se thoat khoi if
-    // Su dung if trong khoang thoi gian 2s
-    if (now - lastTime < 2000) {
-        return; // đọc mỗi 2 giây
-    }
-
-    lastTime = now;
-
-    // Reset button uses INPUT_PULLUP: pressed == LOW
     const bool resetPressed = (digitalRead(btnReset) == LOW);
     const bool activePressed = (digitalRead(btnActive) == LOW);
 
+    // Check if read failed
+    if (checkNAN(tempCurrent))
+        return;
+
+    /*
+     * Khi ma thoi gian nho hon 2s thi se thoat khoi if
+     * Su dung if trong khoang thoi gian 2s
+     */
+    if (now - lastTime < 2000)
+    {
+        return; // đọc mỗi 2 giây
+    }
+
     service_business(tempCurrent, valueMQ2Current, resetPressed, activePressed);
+    lastTime = now;
 }
