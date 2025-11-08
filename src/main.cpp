@@ -1,7 +1,8 @@
 /**
- * @file fire_alarm_final.cpp
+ * @file main.cpp
  * @author Doan Van Ngoc - 104317 - DTD64CL
- * @brief Hệ thống cảnh báo cháy sử dụng Arduino Uno, DHT22, MQ2, LCD I2C và ngắt ngoài.
+ * @brief Hệ thống cảnh báo cháy tự động
+ * @teacher Ths Vũ Thị Thu
  * @version 1.0
  * @date 2025-11-08
  */
@@ -36,7 +37,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define DHT_PIN 4      // Chân data của DHT22 (Đã đổi sang 4 để tránh xung đột với ngắt)
 #define DHT_TYPE DHT22 // Loại cảm biến
 DHT dht(DHT_PIN, DHT_TYPE);
-#define TEMP_OFFSET -2.0 // Giá trị hiệu chỉnh (offset) cho cảm biến nhiệt độ
+#define TEMP_OFFSET 0 // Giá trị hiệu chỉnh (offset) cho cảm biến nhiệt độ
 
 // ==== Ngưỡng nhiệt độ ====
 #define safety 35.0  // Ngưỡng an toàn (<= 35°C)
@@ -110,7 +111,6 @@ bool checkTimer(unsigned long &lastTime, const unsigned long timeDelay)
         return false;
     }
 
-    // Kiểm tra (an toàn với tràn số)
     if (now - lastTime >= timeDelay)
     {
         lastTime = now; // Cập nhật mốc thời gian
