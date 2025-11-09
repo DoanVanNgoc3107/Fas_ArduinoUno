@@ -7,9 +7,7 @@
  * @date 2025-11-08
  */
 
-// =============================================================================
-// THƯ VIỆN
-// =============================================================================
+// Library
 #include <Arduino.h>
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
@@ -28,13 +26,13 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define ledYellow 12 // LED báo trạng thái Cảnh Báo
 
 // ==== NÚT NHẤN & CÒI ====
-#define btnActive 2    // Nút kích hoạt khẩn cấp (Phải là chân ngắt 2 hoặc 3)
+#define btnActive 2    // Nút kích hoạt khẩn cấp (Chân 2 hoặc chân 3)
 #define btnReset 8     // Nút tắt báo động (dùng polling)
 #define buzzerPin 9    // Chân còi báo động
 #define DEBOUNCE_MS 50 // Thời gian chống dội cho nút nhấn (50ms)
 
 // ==== Cảm biến DHT (Nhiệt độ/Độ ẩm) ====
-#define DHT_PIN 4      // Chân data của DHT22 (Đã đổi sang 4 để tránh xung đột với ngắt)
+#define DHT_PIN 4      // Chân data của DHT22
 #define DHT_TYPE DHT22 // Loại cảm biến
 DHT dht(DHT_PIN, DHT_TYPE);
 #define TEMP_OFFSET 0 // Giá trị hiệu chỉnh (offset) cho cảm biến nhiệt độ
@@ -53,42 +51,43 @@ DHT dht(DHT_PIN, DHT_TYPE);
 // ==== Thông số logic hệ thống ====
 #define MQ2_CALIBRATION_TIME 20000 // Thời gian làm nóng MQ2 (20 giây)
 #define temp_tb 0.2                // Ngưỡng thay đổi nhiệt độ để cập nhật LCD
-constexpr int MQ2_tb = 10;         // Ngưỡng thay đổi MQ2 để cập nhật LCD
+constexpr int MQ2_tb = 10; // Ngưỡng thay đổi MQ2 để cập nhật LCD
 
 // =============================================================================
 // BIẾN TOÀN CỤC (GLOBAL VARIABLES)
 // =============================================================================
 
 // ---- Trạng thái cảm biến ----
-float tempLast = 0.0;        // Lưu giá trị nhiệt độ cuối cùng
-int valueMQ2Last = 0;        // Lưu giá trị MQ2 cuối cùng
+float tempLast = 0.0; // Lưu giá trị nhiệt độ cuối cùng
+int valueMQ2Last = 0; // Lưu giá trị MQ2 cuối cùng
 bool dhtErrorActive = false; // Cờ báo lỗi cảm biến DHT
 
 // ---- Ngắt ngoài (Nút Active) ----
 volatile bool activeButtonPressedFlag = false; // Cờ (flag) được ISR giương lên
-unsigned long lastActiveButtonPress = 0;       // Thời gian cuối cùng nhấn (cho debounce)
+unsigned long lastActiveButtonPress = 0; // Thời gian cuối cùng nhấn (cho debounce)
 
 // ---- Timer chính (cho service_business) ----
 unsigned long lastTime = 0; // Mốc thời gian cho timer 2 giây
 
 // ---- Chống dội (Nút Reset - Polling) ----
-int btnReset_lastReading = HIGH;         // Trạng thái đọc cuối cùng
-int btnReset_stableState = HIGH;         // Trạng thái ổn định (đã chống dội)
-unsigned long btnReset_lastDebounce = 0; // Mốc thời gian chống dội
+int btnReset_lastReading = HIGH; // Trạng thái đọc cuối cùng
+int btnReset_stableState = HIGH; // Trạng thái ổn định (đã chống dội)
+unsigned long btnReset_lastDebounce = 500; // Mốc thời gian chống dội
 
 // ---- Trạng thái còi báo động (State Machine) ----
-enum AlarmMode
-{
+enum AlarmMode {
     ALARM_NONE = 0,
     ALARM_WARNING = 2,
     ALARM_DANGER = 3,
 };
+
 AlarmMode alarmMode = ALARM_NONE; // Trạng thái còi hiện tại
-unsigned long alarmLast = 0;      // Mốc thời gian cuối cùng còi đổi trạng thái
-bool alarmStateOn = false;        // Còi đang bật (true) hay tắt (false) trong chu kỳ
-unsigned long alarmOnMs = 0;      // Thời gian bật (ms)
-unsigned long alarmOffMs = 0;     // Thời gian tắt (ms)
-int alarmFreq = 1000;             // Tần số còi
+
+unsigned long alarmLast = 0; // Mốc thời gian cuối cùng còi đổi trạng thái
+bool alarmStateOn = false; // Còi đang true hay tắt false trong chu kỳ
+unsigned long alarmOnMs = 0; // Thời gian bật (ms)
+unsigned long alarmOffMs = 0; // Thời gian tắt (ms)
+int alarmFreq = 1000; // Tần số còi
 
 // =============================================================================
 // CÁC HÀM TIỆN ÍCH (UTILITY FUNCTIONS)
@@ -100,19 +99,16 @@ int alarmFreq = 1000;             // Tần số còi
  * @param timeDelay Khoảng thời gian (ms) cần kiểm tra.
  * @return true nếu đã đủ thời gian, false nếu chưa.
  */
-bool checkTimer(unsigned long &lastTime, const unsigned long timeDelay)
-{
+bool checkTimer(unsigned long &lastTime, const unsigned long timeDelay) {
     unsigned long now = millis();
 
     // Khởi tạo mốc thời gian nếu đây là lần gọi đầu
-    if (lastTime == 0)
-    {
+    if (lastTime == 0) {
         lastTime = now;
         return false;
     }
 
-    if (now - lastTime >= timeDelay)
-    {
+    if (now - lastTime >= timeDelay) {
         lastTime = now; // Cập nhật mốc thời gian
         return true;
     }
@@ -124,21 +120,25 @@ bool checkTimer(unsigned long &lastTime, const unsigned long timeDelay)
  * @brief Khởi tạo giao tiếp Serial.
  * @param baudRate Tốc độ baud (ví dụ: 9600, 115200).
  */
-void serialSetUp(int const baudRate)
-{
+void serialSetUp(int const baudRate) {
     Serial.begin(baudRate);
-    Serial.println("--- He thong khoi dong ---");
+    Serial.println("Group 7:");
+    Serial.println("---  Members:  ---");
+    Serial.println(" - DOAN VAN NGOC - ");
+    Serial.println(" - TRAN ICH HUNG - ");
+    Serial.print(" - NGUYEN VIET HOANG - ");
+    Serial.println(" ----------------------- ");
+    Serial.println("--- BAT DAU KHOI DONG HE THONG XIN CHO TRONG IT PHUT ---");
 }
 
 /**
  * @brief Khởi tạo màn hình LCD.
  */
-void lcdSetUp()
-{
+void lcdSetUp() {
     lcd.init();
     lcd.backlight();
     lcd.setCursor(0, 0);
-    lcd.print("He thong bao chay");
+    lcd.print("Alarm System");
     lcd.setCursor(0, 1);
     lcd.print("GROUP 7");
     delay(2000);
@@ -147,11 +147,10 @@ void lcdSetUp()
 
 /**
  * @brief Thực hiện chờ (blocking) để làm nóng cảm biến MQ2.
- * Chỉ được gọi bên trong setup().
+ * Goị bên trong setup(
  * @param time_calibrate Thời gian chờ (ms).
  */
-void MQ2Setup(unsigned long const time_calibrate)
-{
+void MQ2Setup(unsigned long const time_calibrate) {
     Serial.println("Dang lam nong cam bien MQ2...");
     lcd.clear();
     lcd.print("Hieu chuan MQ2...");
@@ -169,10 +168,9 @@ void MQ2Setup(unsigned long const time_calibrate)
  * @brief Đọc giá trị thô (raw) từ cảm biến MQ2.
  * @param MQ2_pin Chân Analog để đọc.
  * @return int Giá trị analog (0-1023).
+ * @addindex : Tránh spam của serial
  */
-int getValueMQ2(int const MQ2_pin)
-{
-    // Chỉ đọc và trả về, không in Serial ở đây để tránh spam
+int getValueMQ2(int const MQ2_pin) {
     return analogRead(MQ2_pin);
 }
 
@@ -183,11 +181,12 @@ int getValueMQ2(int const MQ2_pin)
 /**
  * @brief Điều khiển 3 đèn LED trạng thái.
  * @param led_Green_State Trạng thái (HIGH/LOW) cho LED Xanh.
+ * <br>
  * @param led_Red_State Trạng thái (HIGH/LOW) cho LED Đỏ.
+ * <br>
  * @param led_Yellow_State Trạng thái (HIGH/LOW) cho LED Vàng.
  */
-void ledServices(bool const led_Green_State, const bool led_Red_State, const bool led_Yellow_State)
-{
+void ledServices(bool const led_Green_State, const bool led_Red_State, const bool led_Yellow_State) {
     digitalWrite(ledGreen, led_Green_State);
     digitalWrite(ledRed, led_Red_State);
     digitalWrite(ledYellow, led_Yellow_State);
@@ -196,8 +195,7 @@ void ledServices(bool const led_Green_State, const bool led_Red_State, const boo
 /**
  * @brief Kích hoạt trạng thái CẢNH BÁO (LED vàng, còi ngắt quãng, LCD).
  */
-void showWarn()
-{
+void showWarn() {
     ledServices(LOW, LOW, HIGH);
     lcd.setCursor(0, 1);
     lcd.print("CANH BAO       ");
@@ -206,8 +204,7 @@ void showWarn()
 /**
  * @brief Kích hoạt trạng thái NGUY HIỂM (LED đỏ, còi hú liên tục, LCD).
  */
-void showDanger()
-{
+void showDanger() {
     ledServices(LOW, HIGH, LOW);
     lcd.setCursor(0, 1);
     lcd.print("!!!BAO DONG!!! ");
@@ -216,19 +213,18 @@ void showDanger()
 /**
  * @brief Khởi tạo chân còi báo động.
  */
-void buzzerSetUp()
-{
+void buzzerSetUp() {
     pinMode(buzzerPin, OUTPUT);
     digitalWrite(buzzerPin, LOW);
 }
 
 /**
  * @brief Bắt đầu một chế độ báo động (non-blocking).
- * Cập nhật các tham số cho handleAlarm().
+ * <br>
+ * - Cập nhật các tham số cho handleAlarm().
  * @param mode Chế độ báo động (ALARM_WARNING, ALARM_DANGER).
  */
-void startAlarm(AlarmMode const mode)
-{
+void startAlarm(AlarmMode const mode) {
     // Chỉ cập nhật nếu chế độ thay đổi
     if (alarmMode == mode)
         return;
@@ -237,16 +233,13 @@ void startAlarm(AlarmMode const mode)
     alarmLast = millis();
     alarmStateOn = false; // Bắt đầu bằng trạng thái TẮT
 
-    if (mode == ALARM_WARNING)
-    {
+    if (mode == ALARM_WARNING) {
         alarmFreq = 1000; // 1 kHz
-        alarmOnMs = 400;  // Bật 400ms
+        alarmOnMs = 400; // Bật 400ms
         alarmOffMs = 600; // Tắt 600ms
-    }
-    else if (mode == ALARM_DANGER)
-    {
+    } else if (mode == ALARM_DANGER) {
         alarmFreq = 2000; // 2 kHz
-        alarmOnMs = 150;  // Bật 150ms
+        alarmOnMs = 150; // Bật 150ms
         alarmOffMs = 150; // Tắt 150ms
     }
 }
@@ -254,8 +247,7 @@ void startAlarm(AlarmMode const mode)
 /**
  * @brief Tắt còi báo động ngay lập tức và reset trạng thái.
  */
-void stopAlarm()
-{
+void stopAlarm() {
     noTone(buzzerPin);
     alarmMode = ALARM_NONE;
     alarmStateOn = false;
@@ -265,8 +257,7 @@ void stopAlarm()
 /**
  * @brief Kích hoạt trạng thái AN TOÀN (LED xanh, còi tắt, LCD).
  */
-void showSafety()
-{
+void showSafety() {
     stopAlarm();
     ledServices(HIGH, LOW, LOW);
     lcd.setCursor(0, 1);
@@ -278,23 +269,19 @@ void showSafety()
  * Phải được gọi liên tục trong loop() để tạo âm thanh ngắt quãng.
  * @param now Thời gian hiện tại (millis()).
  */
-void handleAlarm(const unsigned long now)
-{
+void handleAlarm(const unsigned long now) {
     if (alarmMode == ALARM_NONE)
         return;
 
+    //
     const unsigned long interval = alarmStateOn ? alarmOnMs : alarmOffMs;
 
-    if (now - alarmLast >= interval)
-    {
+    if (now - alarmLast >= interval) {
         alarmLast = now;
         alarmStateOn = !alarmStateOn; // Đảo trạng thái
-        if (alarmStateOn)
-        {
+        if (alarmStateOn) {
             tone(buzzerPin, alarmFreq); // Bật còi
-        }
-        else
-        {
+        } else {
             noTone(buzzerPin); // Tắt còi
         }
     }
@@ -307,35 +294,29 @@ void handleAlarm(const unsigned long now)
  * @param temp Giá trị nhiệt độ vừa đọc được.
  * @return true nếu CÓ lỗi (NaN), false nếu không có lỗi.
  */
-bool checkNAN_nonBlocking(float const temp)
-{
-    if (isnan(temp))
-    {
-        // Nếu lỗi MỚI xảy ra (trước đó không lỗi)
-        if (!dhtErrorActive)
-        {
+bool checkNAN_nonBlocking(float const temp) {
+    if (isnan(temp)) {
+        // Cờ lỗi DHT
+        if (!dhtErrorActive) {
             Serial.println("Loi: Khong doc duoc cam bien DHT!");
             stopAlarm(); // Dừng còi vì không có dữ liệu
 
             lcd.clear();
             lcd.setCursor(0, 0);
-            lcd.print("LOI: CAM BIEN");
+            lcd.print("ERROR: SENSOR");
             lcd.setCursor(0, 1);
-            lcd.print("KIEM TRA DHT22");
+            lcd.print("CHECKED DHT22");
 
             dhtErrorActive = true; // Đánh dấu là đang có lỗi
         }
-        return true; // Báo cho loop() biết là CÓ lỗi
+        return true;
     }
 
-    // Nếu code chạy đến đây, nghĩa là đọc thành công
-
     // Nếu trước đó đang bị lỗi, bây giờ hết
-    if (dhtErrorActive)
-    {
+    if (dhtErrorActive) {
         Serial.println("Cam bien DHT hoat dong tro lai.");
         dhtErrorActive = false; // Xóa cờ lỗi
-        lcd.clear();            // Xóa màn hình lỗi để chuẩn bị in dữ liệu mới
+        lcd.clear();
     }
 
     return false; // Báo cho loop() biết là KHÔNG có lỗi
@@ -350,22 +331,19 @@ bool checkNAN_nonBlocking(float const temp)
  * @param lastDebounceTime Mốc thời gian chống dội cuối (tham chiếu &).
  * @param debounceMs Thời gian chống dội (ms).
  */
-void updateButtonDebounce(const int pin, int &lastReading, int &stableState, unsigned long &lastDebounceTime, const unsigned long debounceMs)
-{
+void updateButtonDebounce(const int pin, int &lastReading, int &stableState, unsigned long &lastDebounceTime,
+                          const unsigned long debounceMs) {
     int reading = digitalRead(pin);
     unsigned long now = millis();
 
-    if (reading != lastReading)
-    {
+    if (reading != lastReading) {
         // Reset mốc thời gian nếu có thay đổi
         lastDebounceTime = now;
     }
 
-    if ((now - lastDebounceTime) >= debounceMs)
-    {
+    if ((now - lastDebounceTime) >= debounceMs) {
         // Nếu trạng thái đã ổn định trong [debounceMs]
-        if (reading != stableState)
-        {
+        if (reading != stableState) {
             stableState = reading; // Chấp nhận trạng thái mới
         }
     }
@@ -379,27 +357,24 @@ void updateButtonDebounce(const int pin, int &lastReading, int &stableState, uns
 
 /**
  * @brief HÀM PHỤC VỤ NGẮT (ISR) cho nút Active (khẩn cấp).
- * HÀM NÀY PHẢI SIÊU NHANH. Chỉ giương cờ (flag).
+ * Chỉ giương cờ (flag).
  */
-void ISR_ACTIVE_BUTTON()
-{
+void ISR_ACTIVE_BUTTON() {
     activeButtonPressedFlag = true;
 }
 
 /**
  * @brief Xử lý logic cho nút Active (chống dội và kích hoạt).
+ * <br>
  * Được gọi liên tục từ loop() để kiểm tra cờ (flag).
  */
-void handleActiveButtonLogic()
-{
+void handleActiveButtonLogic() {
     // Kiểm tra cờ ngắt
-    if (activeButtonPressedFlag == true)
-    {
+    if (activeButtonPressedFlag == true) {
         activeButtonPressedFlag = false; // Hạ cờ ngay lập tức
 
         // Chống dội (debounce) cho nút ngắt
-        if (millis() - lastActiveButtonPress >= DEBOUNCE_MS)
-        {
+        if (millis() - lastActiveButtonPress >= DEBOUNCE_MS) {
             lastActiveButtonPress = millis(); // Cập nhật mốc thời gian
 
             // Thực thi logic báo động khẩn cấp
@@ -407,7 +382,6 @@ void handleActiveButtonLogic()
             startAlarm(ALARM_DANGER);
             showDanger(); // Cập nhật LED và LCD
         }
-        // Nếu chưa đủ DEBOUNCE_MS, đó là tín hiệu "dội" (bounce), bỏ qua.
     }
 }
 
@@ -421,41 +395,35 @@ void handleActiveButtonLogic()
  * @param tempCurrent Nhiệt độ hiện tại.
  * @param valueMQ2 Giá trị MQ2 hiện tại.
  */
-void service_business(const float tempCurrent, const int valueMQ2)
-{
-    // Chỉ cập nhật LCD/Serial nếu giá trị thay đổi đáng kể
-    if (fabs(tempCurrent - tempLast) >= temp_tb || abs(valueMQ2 - valueMQ2Last) >= MQ2_tb)
-    {
+void service_business(const float tempCurrent, const int valueMQ2) {
+    // Chỉ cập nhật LCD/Serial nếu giá trị thay đổi đáng kể giảm spam cho hệ thống
+    if (fabs(tempCurrent - tempLast) >= temp_tb || abs(valueMQ2 - valueMQ2Last) >= MQ2_tb) {
         bool stateChanged = false; // Cờ để kiểm tra logic
 
         // LOGIC 1: NGUY HIỂM (Ưu tiên cao nhất)
-        if (tempCurrent > warning || tempCurrent >= danger || valueMQ2 >= MQ2_THRESHOLD_DANGER)
-        {
+        if (tempCurrent > warning || tempCurrent >= danger || valueMQ2 >= MQ2_THRESHOLD_DANGER) {
             startAlarm(ALARM_DANGER);
             showDanger();
             stateChanged = true;
         }
         // LOGIC 2: CẢNH BÁO
-        else if ((tempCurrent > safety && tempCurrent <= warning) || (valueMQ2 >= MQ2_THRESHOLD_WARNING && valueMQ2 <= MQ2_THRESHOLD_DANGER))
-        {
+        else if ((tempCurrent > safety && tempCurrent <= warning) || (
+                     valueMQ2 >= MQ2_THRESHOLD_WARNING && valueMQ2 <= MQ2_THRESHOLD_DANGER)) {
             startAlarm(ALARM_WARNING);
             showWarn();
             stateChanged = true;
         }
         // LOGIC 3: AN TOÀN
-        else if (tempCurrent <= safety && valueMQ2 <= MQ2_THRESHOLD_NORMAL)
-        {
+        else if (tempCurrent <= safety && valueMQ2 <= MQ2_THRESHOLD_NORMAL) {
             // Chỉ gọi showSafety() nếu trạng thái trước đó KHÔNG PHẢI là an toàn
-            if (alarmMode != ALARM_NONE)
-            {
+            if (alarmMode != ALARM_NONE) {
                 showSafety();
                 stateChanged = true;
             }
         }
 
         // Nếu có bất kỳ thay đổi nào, cập nhật giá trị
-        if (stateChanged)
-        {
+        if (stateChanged) {
             tempLast = tempCurrent;
             valueMQ2Last = valueMQ2;
         }
@@ -466,25 +434,21 @@ void service_business(const float tempCurrent, const int valueMQ2)
         Serial.print(" | MQ2 Value=");
         Serial.println(valueMQ2);
 
-        // Cập nhật LCD (phiên bản an toàn, không dùng String)
+        // Cập nhật LCD
         lcd.setCursor(0, 0);
-        lcd.print("                "); // Xóa dòng 0
+        lcd.print("                ");
         lcd.setCursor(0, 0);
         lcd.print("MQ2:");
         lcd.print(valueMQ2);
         lcd.setCursor(9, 0);
         lcd.print("T:");
         lcd.print(tempCurrent, 1);
-        lcd.print((char)223); // Ký tự độ
+        lcd.print(static_cast<char>(223)); // Ký tự độ
         lcd.print("C");
     }
 }
 
-// =============================================================================
-// SETUP - Chạy 1 lần khi khởi động
-// =============================================================================
-void setup()
-{
+void setup() {
     // Khởi tạo Serial
     serialSetUp(9600);
 
@@ -492,7 +456,7 @@ void setup()
     dht.begin();
     lcdSetUp();
 
-    // Làm nóng MQ2 (chặn 20 giây)
+    // Làm nóng MQ2 (chặn 20 giây) để đảm bảo hiệu chuẩn ổn định
     MQ2Setup(MQ2_CALIBRATION_TIME);
 
     // Khởi tạo LED
@@ -503,35 +467,28 @@ void setup()
 
     // Khởi tạo Nút nhấn
     pinMode(btnActive, INPUT_PULLUP); // Chân 2 (Ngắt)
-    pinMode(btnReset, INPUT_PULLUP);  // Chân 8 (Polling)
+    pinMode(btnReset, INPUT_PULLUP); // Chân 8 (Polling)
 
     // Khởi tạo Còi
     buzzerSetUp();
     stopAlarm();
 
-    // === ĐĂNG KÝ NGẮT NGOÀI ===
+    // Ngắt ngoài
     attachInterrupt(digitalPinToInterrupt(btnActive), ISR_ACTIVE_BUTTON, FALLING);
 
-    Serial.println("--- Khoi dong hoan tat. Bat dau loop() ---");
+    Serial.println("--- HE THONG KHOI DONG HOAN TAT ---");
     showSafety(); // Bắt đầu ở trạng thái An Toàn
 }
 
 // =============================================================================
 // LOOP - Chạy liên tục
 // =============================================================================
-void loop()
-{
+void loop() {
     const unsigned long now = millis();
 
-    // ==============================================
-    // === 1. XỬ LÝ NGẮT (ƯU TIÊN CAO NHẤT) ===
-    // ==============================================
-    // (Kiểm tra cờ 'activeButtonPressedFlag' có được ISR giương lên không)
+    // ===== TÁC VỤ ƯU TIÊN CAO NHẤT ====
+    // Kiểm tra cờ ngắt
     handleActiveButtonLogic();
-
-    // ==============================================
-    // === 2. XỬ LÝ TÁC VỤ THƯỜNG XUYÊN ===
-    // ==============================================
 
     // Xử lý còi báo động (non-blocking, luôn chạy)
     handleAlarm(now);
@@ -541,8 +498,7 @@ void loop()
     const bool resetPressed = (btnReset_stableState == LOW);
 
     // Xử lý logic Reset (phản hồi tức thì)
-    if (resetPressed)
-    {
+    if (resetPressed) {
         // Tắt còi và reset về trạng thái an toàn ngay
         showSafety();
     }
@@ -552,17 +508,14 @@ void loop()
     // ==============================================
 
     // Chỉ chạy logic cảm biến mỗi 2000 ms
-    if (checkTimer(lastTime, 2000))
-    {
+    if (checkTimer(lastTime, 2000)) {
         // Chỉ khi KHÔNG nhấn reset thì mới chạy logic báo động
-        if (!resetPressed)
-        {
+        if (!resetPressed) {
             // 1. Đọc cảm biến DHT
             float const tempCurrent = dht.readTemperature() + TEMP_OFFSET;
 
             // 2. Kiểm tra lỗi (non-blocking)
-            if (!checkNAN_nonBlocking(tempCurrent))
-            {
+            if (!checkNAN_nonBlocking(tempCurrent)) {
                 // 3. KHÔNG có lỗi DHT:
                 // Tiếp tục đọc MQ2 và chạy nghiệp vụ
                 int const valueMQ2Current = getValueMQ2(MQ2_PIN);
