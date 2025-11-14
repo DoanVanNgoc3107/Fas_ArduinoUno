@@ -48,6 +48,9 @@ DHT dht(DHT_PIN, DHT_TYPE);
 #define MQ2_THRESHOLD_WARNING 500 // Ngưỡng cảnh báo
 #define MQ2_THRESHOLD_DANGER 700  // Ngưỡng nguy hiểm
 
+// ==== Số điện thoại nhận thông báo ====
+#define PHONE_NUMBER_MANAGER 0345515986
+
 // ==== Thông số logic hệ thống ====
 #define MQ2_CALIBRATION_TIME 20000 // Thời gian làm nóng MQ2 (20 giây)
 #define temp_tb 0.2                // Ngưỡng thay đổi nhiệt độ để cập nhật LCD
@@ -88,6 +91,7 @@ bool alarmStateOn = false; // Còi đang true hay tắt false trong chu kỳ
 unsigned long alarmOnMs = 0; // Thời gian bật (ms)
 unsigned long alarmOffMs = 0; // Thời gian tắt (ms)
 int alarmFreq = 1000; // Tần số còi
+
 
 // =============================================================================
 // CÁC HÀM TIỆN ÍCH (UTILITY FUNCTIONS)
@@ -168,7 +172,7 @@ void MQ2Setup(unsigned long const time_calibrate) {
  * @brief Đọc giá trị thô (raw) từ cảm biến MQ2.
  * @param MQ2_pin Chân Analog để đọc.
  * @return int Giá trị analog (0-1023).
- * @addindex : Tránh spam của serial
+ * @addindex Tránh spam của serial
  */
 int getValueMQ2(int const MQ2_pin) {
     return analogRead(MQ2_pin);
